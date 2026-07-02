@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creator Media Studio</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module">
+  // gifuct-js is ESM-only, so it's loaded as a module and exposed on window for the classic
+  // script below to use. window.__gifuctReady lets that script await it being available
+  // without a polling loop.
+  window.__gifuctReady = import('https://cdn.jsdelivr.net/npm/gifuct-js/+esm').then(mod => {
+    window.__gifuct = mod;
+  }).catch(err => {
+    console.error('Failed to load GIF decoder:', err);
+  });
+</script>
+<style>
+  .hero { padding: 90px 24px 60px; position: relative; overflow: hidden; }
+  .contact-strip { position: absolute; top: 0; left: 0; right: 0; height: 100%; display: flex; gap: 4px; opacity: 0.05; z-index: 0; pointer-events: none; }
+  .contact-strip .frame { flex: 1; border: 1px solid var(--ink); margin-top: 20px; height: 90%; }
+  .hero-inner { position: relative; z-index: 1; text-align: center; }
+  .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 18px; }
+  .hero h1 { font-size: clamp(2.2rem, 5vw, 3.6rem); line-height: 1.08; margin-bottom: 18px; }
+  .hero h1 em { color: var(--accent); font-style: normal; }
+  .hero p.sub { color: var(--ink-dim); font-size: 1.08rem; max-width: 540px; margin: 0 auto 34px; }
+
+  .modes { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .mode-card { border: 1px solid var(--line); border-radius: 4px; padding: 14px 20px; cursor: pointer; background: var(--bg-raised); transition: all 0.2s; text-align: left; min-width: 168px; }
+  .mode-card:hover { border-color: var(--accent); }
+  .mode-card.active { border-color: var(--accent); background: rgba(232, 84, 42, 0.08); }
+  .mode-card .m-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 3px; }
+  .mode-card .m-sub { font-size: 0.78rem; color: var(--ink-dim); font-family: 'IBM Plex Mono', monospace; }
+  .mode-card.soon { opacity: 0.45; cursor: not-allowed; }
+  .mode-card.soon:hover { border-color: var(--line); }
+
+  .gif-warning {
+    max-width: 760px; margin: 14px auto 0; padding: 12px 16px; border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 4px; background: var(--bg-raised);
+    font-size: 0.82rem; color: var(--ink-dim); line-height: 1.5; display: none;
+  }
+  .gif-warning.show { display: block; }
+  .gif-warning strong { color: var(--ink); }
+
+  .studio { padding: 20px 24px 80px; }
+  .studio-inner { max-width: 760px; margin: 0 auto; }
+
+  .dropzone { border: 1.5px dashed var(--line); border-radius: 6px; padding: 50px 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--bg-raised); }
+  .dropzone.drag { border-color: var(--accent); background: rgba(232, 84, 42, 0.06); }
+  .dropzone.disabled { opacity: 0.4; cursor: not-allowed; }
+  .dropzone .dz-icon { font-size: 2rem; margin-bottom: 12px; color: var(--accent); }
+  .dropzone .dz-title { font-weight: 500; margin-bottom: 6px; }
+  .dropzone .dz-sub { color: var(--ink-dim); font-size: 0.85rem; font-family: 'IBM Plex Mono', monospace; }
+  input[type=file] { display: none; }
+
+  .thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .thumb { position: relative; width: 76px; height: 76px; border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
+  .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; }
+  .thumb .rm { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; cursor: pointer; line-height: 1; }
+
+  .controls { display: flex; align-items: center; gap: 16px; margin-top: 22px; flex-wrap: wrap; }
+  .control-group { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--ink-dim); font-family: 'IBM Plex Mono', monospace; }
+  .control-group input[type=range] { accent-color: var(--accent); }
+
+  .res-picker { display: inline-flex; gap: 4px; }
+  .res-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; padding: 5px 12px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink-dim);
+    border-radius: 3px; cursor: pointer; transition: all 0.15s;
+  }
+  .res-btn:hover { border-color: var(--accent); color: var(--ink); }
+  .res-btn.active { border-color: var(--accent); background: rgba(232,84,42,0.12); color: var(--accent); }
+  .field-hint-inline { width: 100%; font-size: 0.76rem; color: var(--ink-dim); font-family: 'IBM Plex Mono', monospace; margin-top: -4px; }
+
+  .convert-row { display: flex; align-items: center; gap: 14px; margin-top: 26px; flex-wrap: wrap; }
+
+  .frame-counter { display: flex; align-items: center; gap: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; }
+  .sprockets { display: flex; gap: 3px; flex-wrap: wrap; max-width: 220px; }
+  .sprocket { width: 9px; height: 9px; border-radius: 1px; background: var(--frame-off); transition: background 0.2s; }
+  .sprocket.on { background: var(--accent); }
+  .frame-label { color: var(--ink-dim); }
+  .frame-label .n { color: var(--ink); }
+
+  .progress-track { width: 100%; height: 3px; background: var(--frame-off); border-radius: 2px; overflow: hidden; margin-top: 16px; display: none; }
+  .progress-track.show { display: block; }
+  .progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.15s ease; }
+
+  .status-line { font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; color: var(--ink-dim); margin-top: 10px; min-height: 18px; }
+
+  .result-box { margin-top: 22px; padding: 20px; border: 1px solid var(--accent); border-radius: 6px; background: rgba(232,84,42,0.06); display: none; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .result-box.show { display: flex; }
+  .result-box .r-info { font-size: 0.9rem; }
+  .result-box .r-info .r-title { font-weight: 600; margin-bottom: 2px; }
+  .result-box .r-info .r-sub { color: var(--ink-dim); font-size: 0.78rem; font-family: 'IBM Plex Mono', monospace; }
+
+  .limit-banner { max-width: 760px; margin: 0 auto 18px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 4px; display: flex; align-items: center; justify-content: space-between; font-size: 0.82rem; color: var(--ink-dim); font-family: 'IBM Plex Mono', monospace; flex-wrap: wrap; gap: 10px; }
+  .limit-banner.warn { border-color: var(--accent); color: var(--accent); }
+  .limit-banner a.upgrade { color: var(--accent); text-decoration: underline; cursor: pointer; }
+
+  .account-pill { font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem; color: var(--ink-dim); display: flex; align-items: center; gap: 10px; }
+  .account-pill .name { color: var(--ink); }
+
+  @media (max-width: 600px) {
+    .modes { flex-direction: column; align-items: stretch; }
+    .mode-card { min-width: 0; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<nav>
+  <a class="logo" href="index.html"><span class="dot"></span> Creator Media Studio</a>
+  <div class="nav-right" id="navRight">
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">☀</button>
+    <!-- populated by JS depending on session state -->
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="contact-strip" id="contactStrip"></div>
+  <div class="hero-inner wrap">
+    <div class="eyebrow" id="heroEyebrow">Frame 0001 · Guest mode</div>
+    <h1>Convert media<br><em>right in your browser.</em></h1>
+    <p class="sub">Images, video, and GIF — processed locally on your device. Nothing uploads to a server except a usage count.</p>
+  </div>
+</section>
+
+<section class="studio">
+  <div class="limit-banner" id="limitBanner">
+    <span class="mono" id="limitText">Loading usage…</span>
+    <a class="upgrade" id="upgradeLink" href="signup.html">Sign up for 50/day →</a>
+  </div>
+
+  <div class="studio-inner">
+    <div class="modes" id="modes">
+      <div class="mode-card active" data-mode="img2vid">
+        <div class="m-title">Images → Video</div>
+        <div class="m-sub">.webm slideshow</div>
+      </div>
+      <div class="mode-card" data-mode="img2gif">
+        <div class="m-title">Images → GIF</div>
+        <div class="m-sub">animated .gif</div>
+      </div>
+      <div class="mode-card" data-mode="vid2gif">
+        <div class="m-title">Video → GIF</div>
+        <div class="m-sub">clip → animated .gif</div>
+      </div>
+      <div class="mode-card" data-mode="gif2img">
+        <div class="m-title">GIF → Images</div>
+        <div class="m-sub">frames → .zip of .png</div>
+      </div>
+    </div>
+
+    <div class="gif-warning" id="gifWarning">
+      <strong>Why GIF looks softer than video:</strong> GIF is capped at 256 colors total —
+      that's a hard limit of the format itself, not a setting we can raise. Photos with smooth
+      gradients (skies, skin tones, shadows) get quantized and dithered to fit that palette, no
+      matter how high the resolution is. If you don't specifically need it to auto-play without
+      a video player, <strong>Images → Video</strong> will look noticeably sharper for the same
+      source material.
+    </div>
+
+    <div class="dropzone" id="dropzone">
+      <div class="dz-icon">↑</div>
+      <div class="dz-title" id="dzTitle">Drop images here, or click to browse</div>
+      <div class="dz-sub" id="dzSub">JPG, PNG, WEBP — up to 10 files</div>
+      <input type="file" id="fileInput" accept="image/*" multiple>
+    </div>
+
+    <div class="thumbs" id="thumbs"></div>
+    <div id="optionsArea"></div>
+
+    <div class="convert-row">
+      <button class="btn btn-solid" id="convertBtn" disabled>Convert</button>
+      <div class="frame-counter">
+        <div class="sprockets" id="sprockets"></div>
+        <div class="frame-label">FRAME <span class="n" id="frameNum">0000</span> / <span id="frameTotal">0020</span></div>
+      </div>
+    </div>
+
+    <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="status-line" id="statusLine"></div>
+
+    <div class="result-box" id="resultBox">
+      <div class="r-info">
+        <div class="r-title" id="resultTitle">Conversion ready</div>
+        <div class="r-sub" id="resultSub"></div>
+      </div>
+      <a class="btn btn-solid" id="downloadBtn" download>Download</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  CREATOR MEDIA STUDIO — @creator.com accounts · server-enforced limits · GIF frame extraction<br>
+  Guest: 20/day by IP · Account: 50/day by user — both tracked server-side, not in your browser<br>
+  &copy; 2026 Creator Media Studio. All rights reserved. · <a href="terms.html">Terms &amp; Copyright</a>
+</footer>
+
+<script>
+/* ================= THEME ================= */
+const themeToggle = document.getElementById('themeToggle');
+themeToggle.addEventListener('click', () => {
+  const body = document.body;
+  const isDark = body.getAttribute('data-theme') === 'dark';
+  body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  themeToggle.textContent = isDark ? '☾' : '☀';
+});
+
+/* ================= CONTACT STRIP DECORATION ================= */
+const strip = document.getElementById('contactStrip');
+for (let i = 0; i < 14; i++) { const f = document.createElement('div'); f.className = 'frame'; strip.appendChild(f); }
+
+/* ================= SESSION + SERVER-BACKED USAGE ================= */
+// The client never tracks or reports its own usage count. Every number shown here comes
+// straight from the server, and the server is the only thing that ever increments it.
+let currentUser = null;
+let usageState = { tier: 'guest', used: 0, limit: 20, remaining: 20 };
+
+async function loadSession() {
+  try {
+    const res = await fetch('/api/auth/me', { credentials: 'include' });
+    const data = await res.json();
+    currentUser = data.user;
+  } catch (e) { currentUser = null; }
+  renderNav();
+}
+
+function renderNav() {
+  const box = document.getElementById('navRight');
+  const themeBtn = document.getElementById('themeToggle');
+  box.innerHTML = '';
+  box.appendChild(themeBtn);
+  if (currentUser) {
+    const dashBtn = document.createElement('a');
+    dashBtn.className = 'btn'; dashBtn.href = 'dashboard.html'; dashBtn.textContent = 'Dashboard';
+    box.appendChild(dashBtn);
+    const pill = document.createElement('div');
+    pill.className = 'account-pill';
+    pill.innerHTML = `<span class="name">${escapeHtml(currentUser.name)}</span>`;
+    box.appendChild(pill);
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'btn';
+    logoutBtn.textContent = 'Log out';
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      window.location.reload();
+    });
+    box.appendChild(logoutBtn);
+  } else {
+    const loginBtn = document.createElement('a');
+    loginBtn.className = 'btn'; loginBtn.href = 'login.html'; loginBtn.textContent = 'Log in';
+    const signupBtn = document.createElement('a');
+    signupBtn.className = 'btn btn-solid'; signupBtn.href = 'signup.html'; signupBtn.textContent = 'Sign up · @creator.com';
+    box.appendChild(loginBtn);
+    box.appendChild(signupBtn);
+  }
+}
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function refreshUsage() {
+  try {
+    const res = await fetch('/api/usage/status', { credentials: 'include' });
+    usageState = await res.json();
+  } catch (e) { /* leave previous state */ }
+  renderUsageUI();
+}
+
+function renderUsageUI() {
+  const { tier, used, limit, remaining } = usageState;
+  const tierLabel = tier === 'user' ? 'ACCOUNT TIER' : 'GUEST TIER';
+  document.getElementById('limitText').textContent = `${tierLabel} · ${remaining} / ${limit} conversions remaining today`;
+  document.getElementById('limitBanner').classList.toggle('warn', remaining <= 3);
+  document.getElementById('heroEyebrow').textContent = `Frame ${String(used + 1).padStart(4, '0')} · ${tier === 'user' ? 'Signed in' : 'Guest mode'}`;
+  document.getElementById('upgradeLink').style.display = tier === 'user' ? 'none' : 'inline';
+
+  document.getElementById('frameTotal').textContent = String(limit).padStart(4, '0');
+  document.getElementById('frameNum').textContent = String(used).padStart(4, '0');
+  renderSprockets(used, limit);
+  updateConvertState();
+
+  if (remaining <= 0) {
+    setStatus(tier === 'user' ? 'Daily limit reached — resets at midnight UTC.' : 'Guest limit reached — sign up for 50/day.');
+  }
+}
+
+function renderSprockets(used, limit) {
+  const box = document.getElementById('sprockets');
+  box.innerHTML = '';
+  const show = Math.min(limit, 50);
+  for (let i = 0; i < show; i++) {
+    const s = document.createElement('div');
+    s.className = 'sprocket' + (i < used ? ' on' : '');
+    box.appendChild(s);
+  }
+}
+
+loadSession().then(refreshUsage);
+
+/* ================= MODE STATE ================= */
+let mode = 'img2vid';
+const modeConfig = {
+  img2vid: { accept: 'image/*', multiple: true, dzTitle: 'Drop images here, or click to browse', dzSub: 'JPG, PNG, WEBP — up to 10 files' },
+  img2gif: { accept: 'image/*', multiple: true, dzTitle: 'Drop images here, or click to browse', dzSub: 'JPG, PNG, WEBP — up to 10 files' },
+  vid2gif: { accept: 'video/*', multiple: false, dzTitle: 'Drop a video here, or click to browse', dzSub: 'MP4, WEBM, MOV — one file' },
+  gif2img: { accept: 'image/gif', multiple: false, dzTitle: 'Drop an animated GIF here, or click to browse', dzSub: 'Animated GIF — one file' },
+};
+const GIF_OUTPUT_MODES = new Set(['img2gif', 'vid2gif']);
+
+document.querySelectorAll('.mode-card').forEach(card => {
+  card.addEventListener('click', () => {
+    if (card.classList.contains('soon')) return;
+    document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+    mode = card.dataset.mode;
+    const cfg = modeConfig[mode];
+    document.getElementById('fileInput').accept = cfg.accept;
+    document.getElementById('fileInput').multiple = cfg.multiple;
+    document.getElementById('dzTitle').textContent = cfg.dzTitle;
+    document.getElementById('dzSub').textContent = cfg.dzSub;
+    document.getElementById('gifWarning').classList.toggle('show', GIF_OUTPUT_MODES.has(mode));
+    clearFiles();
+    renderOptions();
+  });
+});
+
+/* ================= FILE HANDLING ================= */
+let files = [];
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const thumbsBox = document.getElementById('thumbs');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('drag'); handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(fileList) {
+  const cfg = modeConfig[mode];
+  const incoming = Array.from(fileList);
+  files = cfg.multiple ? [...files, ...incoming].slice(0, 10) : [incoming[0]];
+  renderThumbs();
+  updateConvertState();
+}
+function clearFiles() { files = []; renderThumbs(); updateConvertState(); hideResult(); }
+
+function renderThumbs() {
+  thumbsBox.innerHTML = '';
+  files.forEach((f, idx) => {
+    const t = document.createElement('div');
+    t.className = 'thumb';
+    const url = URL.createObjectURL(f);
+    if (f.type.startsWith('video')) { const v = document.createElement('video'); v.src = url; v.muted = true; t.appendChild(v); }
+    else { const img = document.createElement('img'); img.src = url; t.appendChild(img); }
+    const rm = document.createElement('div');
+    rm.className = 'rm'; rm.textContent = '×';
+    rm.addEventListener('click', ev => { ev.stopPropagation(); files.splice(idx, 1); renderThumbs(); updateConvertState(); });
+    t.appendChild(rm);
+    thumbsBox.appendChild(t);
+  });
+}
+
+function updateConvertState() {
+  const btn = document.getElementById('convertBtn');
+  btn.disabled = files.length === 0 || usageState.remaining <= 0;
+}
+
+/* ================= OPTIONS PER MODE ================= */
+function resPickerHTML(id, defaultRes, warnGif) {
+  return `<div class="control-group">
+    <span>Resolution</span>
+    <div class="res-picker" id="${id}">
+      <button type="button" class="res-btn${defaultRes==='720p'?' active':''}" data-res="720p">720p</button>
+      <button type="button" class="res-btn${defaultRes==='1080p'?' active':''}" data-res="1080p">1080p</button>
+      <button type="button" class="res-btn${defaultRes==='2k'?' active':''}" data-res="2k">2K</button>
+    </div>
+  </div>${warnGif ? '<div class="field-hint-inline">Higher resolutions make much larger, slower-to-encode GIFs.</div>' : ''}`;
+}
+function bindResPicker(id) {
+  document.querySelectorAll(`#${id} .res-btn`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll(`#${id} .res-btn`).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+}
+
+function renderOptions() {
+  const area = document.getElementById('optionsArea');
+  if (mode === 'img2vid') {
+    area.innerHTML = `<div class="controls">
+      <div class="control-group">Seconds per image <input type="range" id="optSecs" min="0.5" max="4" step="0.5" value="1.5"><span id="optSecsVal">1.5s</span></div>
+      <div class="control-group">Frame rate <input type="range" id="optFps" min="10" max="30" step="5" value="20"><span id="optFpsVal">20fps</span></div>
+      ${resPickerHTML('optResVid', '1080p', false)}
+    </div>`;
+    bindRangeDisplay('optSecs', 'optSecsVal', 's');
+    bindRangeDisplay('optFps', 'optFpsVal', 'fps');
+    bindResPicker('optResVid');
+  } else if (mode === 'img2gif') {
+    area.innerHTML = `<div class="controls">
+      <div class="control-group">Delay per frame <input type="range" id="optDelay" min="100" max="1000" step="50" value="400"><span id="optDelayVal">400ms</span></div>
+      ${resPickerHTML('optResImgGif', '1080p', true)}
+    </div>`;
+    bindRangeDisplay('optDelay', 'optDelayVal', 'ms');
+    bindResPicker('optResImgGif');
+  } else if (mode === 'vid2gif') {
+    area.innerHTML = `<div class="controls">
+      <div class="control-group">Clip length <input type="range" id="optDur" min="1" max="8" step="1" value="3"><span id="optDurVal">3s</span></div>
+      <div class="control-group">Sample rate <input type="range" id="optSample" min="5" max="15" step="1" value="10"><span id="optSampleVal">10fps</span></div>
+      ${resPickerHTML('optResVidGif', '1080p', true)}
+    </div>`;
+    bindRangeDisplay('optDur', 'optDurVal', 's');
+    bindRangeDisplay('optSample', 'optSampleVal', 'fps');
+    bindResPicker('optResVidGif');
+  } else if (mode === 'gif2img') {
+    area.innerHTML = `<div class="controls">
+      <div class="control-group" style="color: var(--ink-dim);">Extracts every frame at the GIF's native resolution, packaged as a .zip of .png files.</div>
+    </div>`;
+  }
+}
+function bindRangeDisplay(id, valId, unit) {
+  const el = document.getElementById(id); const val = document.getElementById(valId);
+  el.addEventListener('input', () => val.textContent = el.value + unit);
+}
+renderOptions();
+
+
+/* ================= GIF.JS WORKER SETUP ================= */
+let gifWorkerBlobUrl = null;
+async function getGifWorkerUrl() {
+  if (gifWorkerBlobUrl) return gifWorkerBlobUrl;
+  const res = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js');
+  const blob = await res.blob();
+  gifWorkerBlobUrl = URL.createObjectURL(blob);
+  return gifWorkerBlobUrl;
+}
+
+/* ================= STATUS / PROGRESS HELPERS ================= */
+function setStatus(msg) { document.getElementById('statusLine').textContent = msg; }
+function setProgress(pct) {
+  const track = document.getElementById('progressTrack'); const fill = document.getElementById('progressFill');
+  track.classList.add('show'); fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+function hideProgress() { document.getElementById('progressTrack').classList.remove('show'); document.getElementById('progressFill').style.width = '0%'; }
+function hideResult() { document.getElementById('resultBox').classList.remove('show'); }
+function showResult(title, sub, blob, filename) {
+  document.getElementById('resultTitle').textContent = title;
+  document.getElementById('resultSub').textContent = sub;
+  const dl = document.getElementById('downloadBtn');
+  dl.href = URL.createObjectURL(blob);
+  dl.download = filename;
+  document.getElementById('resultBox').classList.add('show');
+}
+
+/* ================= CONVERSION ENGINES (unchanged from phase 1 — pure client-side processing) ================= */
+// Standard resolution presets. "Long edge" is applied to whichever dimension is larger for
+// the source media, so a landscape source at 1080p comes out 1920x1080 and a portrait source
+// at 1080p comes out 1080x1920 — matching how those resolutions are normally described.
+const RESOLUTION_PRESETS = { '720p': 1280, '1080p': 1920, '2k': 2560 };
+function targetDimensions(sourceW, sourceH, presetKey) {
+  const longEdge = RESOLUTION_PRESETS[presetKey] || RESOLUTION_PRESETS['1080p'];
+  const ratio = sourceW / sourceH;
+  if (ratio >= 1) return { w: longEdge, h: Math.round(longEdge / ratio) };
+  return { w: Math.round(longEdge * ratio), h: longEdge };
+}
+
+async function convertImagesToVideo() {
+  const secs = parseFloat(document.getElementById('optSecs').value);
+  const fps = parseInt(document.getElementById('optFps').value);
+  const resPreset = document.querySelector('#optResVid .res-btn.active').dataset.res;
+  const imgs = await Promise.all(files.map(loadImage));
+
+  // BUG FIX: this used to take Math.max() of widths and Math.max() of heights *independently*
+  // across all images, which could combine the width of one photo with the height of a
+  // completely different one. Worse, there was no resolution floor at all — if every source
+  // photo happened to be small (e.g. web-exported images, screenshots), the output came out
+  // exactly that small, which is what produced the "looks like 180p" result. Output is now
+  // sized to a real resolution preset (720p/1080p/2K) regardless of how small the source is;
+  // small images get upscaled with high-quality smoothing to fill the target frame.
+  const widest = imgs.reduce((a, b) => (a.naturalWidth * a.naturalHeight > b.naturalWidth * b.naturalHeight ? a : b));
+  const { w, h } = targetDimensions(widest.naturalWidth, widest.naturalHeight, resPreset);
+
+  const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const stream = canvas.captureStream(fps);
+  const chunks = [];
+
+  // VP8 is used first rather than VP9: several Chromium versions have had real-world bugs
+  // producing corrupted/unplayable output specifically from VP9 canvas captureStream
+  // recordings (plays in the browser that made it, fails or glitches everywhere else,
+  // including VLC). VP8 canvas capture is the long-standing reliable path.
+  const mimeCandidates = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
+  const mimeType = mimeCandidates.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+
+  // Browsers default to a low bitrate (often ~2.5Mbps) for MediaRecorder regardless of
+  // resolution, which is a major cause of visible blur/compression artifacts on canvas
+  // capture. Scale the target bitrate to the actual pixel count so a 1080p export doesn't
+  // get the same bitrate as a 480p one.
+  const pixelCount = w * h;
+  const videoBitsPerSecond = Math.min(30_000_000, Math.max(8_000_000, Math.round(pixelCount * 0.15)));
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond });
+  recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+  const donePromise = new Promise(resolve => { recorder.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' })); });
+  recorder.start();
+  for (let i = 0; i < imgs.length; i++) {
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+    drawContain(ctx, imgs[i], w, h);
+    setStatus(`Rendering frame ${i + 1} of ${imgs.length}…`);
+    setProgress(((i + 1) / imgs.length) * 100);
+    await sleep(secs * 1000);
+  }
+  // Hold on the final frame for a couple of frame-intervals and force a data flush before
+  // stopping. Stopping immediately after the last draw can cut off before captureStream has
+  // actually sampled the final canvas state at the requested fps, which is a common cause of
+  // a truncated/corrupted trailing frame that some players (VLC included) refuse to play
+  // cleanly.
+  await sleep(Math.max(200, Math.round(2000 / fps)));
+  if (recorder.state === 'recording') recorder.requestData();
+  await sleep(50);
+  recorder.stop();
+  const blob = await donePromise;
+  return { blob, filename: 'creator-media-studio.webm', label: `${imgs.length} images · ${fps}fps · ${w}×${h} · ${(secs*imgs.length).toFixed(1)}s` };
+}
+function drawContain(ctx, img, w, h) {
+  const scale = Math.min(w / img.naturalWidth || w / img.videoWidth, h / img.naturalHeight || h / img.videoHeight);
+  const iw = img.naturalWidth || img.videoWidth, ih = img.naturalHeight || img.videoHeight;
+  const s = Math.min(w / iw, h / ih);
+  const dw = iw * s, dh = ih * s;
+  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+function loadImage(file) {
+  return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = URL.createObjectURL(file); });
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function convertImagesToGif() {
+  const delay = parseInt(document.getElementById('optDelay').value);
+  const resPreset = document.querySelector('#optResImgGif .res-btn.active').dataset.res;
+  const workerUrl = await getGifWorkerUrl();
+  const imgs = await Promise.all(files.map(loadImage));
+
+  const widest = imgs.reduce((a, b) => (a.naturalWidth * a.naturalHeight > b.naturalWidth * b.naturalHeight ? a : b));
+  const { w: outW, h: outH } = targetDimensions(widest.naturalWidth, widest.naturalHeight, resPreset);
+
+  // gif.js "quality" is a color-quantization sampling factor: LOWER is sharper (1 = best
+  // quality/slowest, the library default of 10 visibly softens output).
+  const gif = new GIF({ workers: 2, quality: 1, width: outW, height: outH, workerScript: workerUrl });
+  const canvas = document.createElement('canvas'); canvas.width = outW; canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  imgs.forEach((img, i) => {
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH);
+    drawContain(ctx, img, outW, outH);
+    gif.addFrame(ctx, { copy: true, delay });
+    setStatus(`Queued frame ${i + 1} of ${imgs.length}…`);
+    setProgress(((i + 1) / imgs.length) * 40);
+  });
+  return new Promise(resolve => {
+    gif.on('progress', p => setProgress(40 + p * 60));
+    gif.on('finished', blob => resolve({ blob, filename: 'creator-media-studio.gif', label: `${imgs.length} frames · ${delay}ms delay · ${outW}×${outH}` }));
+    setStatus('Encoding GIF…');
+    gif.render();
+  });
+}
+
+async function convertVideoToGif() {
+  const dur = parseInt(document.getElementById('optDur').value);
+  const sampleFps = parseInt(document.getElementById('optSample').value);
+  const resPreset = document.querySelector('#optResVidGif .res-btn.active').dataset.res;
+  const workerUrl = await getGifWorkerUrl();
+  const file = files[0];
+  const video = document.createElement('video');
+  video.src = URL.createObjectURL(file); video.muted = true;
+  await new Promise(res => { video.onloadedmetadata = res; });
+  const clipLen = Math.min(dur, video.duration || dur);
+  const frameCount = Math.max(1, Math.floor(clipLen * sampleFps));
+  const interval = clipLen / frameCount;
+
+  const { w: outW, h: outH } = targetDimensions(video.videoWidth || 16, video.videoHeight || 9, resPreset);
+
+  const canvas = document.createElement('canvas'); canvas.width = outW; canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const gif = new GIF({ workers: 2, quality: 1, width: outW, height: outH, workerScript: workerUrl });
+  for (let i = 0; i < frameCount; i++) {
+    video.currentTime = i * interval;
+    await new Promise(res => { video.onseeked = res; });
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH);
+    drawContain(ctx, video, outW, outH);
+    gif.addFrame(ctx, { copy: true, delay: Math.round(1000 / sampleFps) });
+    setStatus(`Sampling frame ${i + 1} of ${frameCount}…`);
+    setProgress(((i + 1) / frameCount) * 40);
+  }
+  return new Promise(resolve => {
+    gif.on('progress', p => setProgress(40 + p * 60));
+    gif.on('finished', blob => resolve({ blob, filename: 'creator-media-studio.gif', label: `${frameCount} frames · ${clipLen.toFixed(1)}s clip · ${outW}×${outH}` }));
+    setStatus('Encoding GIF…');
+    gif.render();
+  });
+}
+
+/* ================= CONVERSION: GIF -> IMAGES (gifuct-js decode + JSZip package) ================= */
+async function convertGifToImages() {
+  setStatus('Loading GIF decoder…');
+  await window.__gifuctReady;
+  if (!window.__gifuct) throw new Error('GIF decoder failed to load');
+  const { parseGIF, decompressFrames } = window.__gifuct;
+
+  const file = files[0];
+  const buffer = await file.arrayBuffer();
+  const gifData = parseGIF(buffer);
+  const frames = decompressFrames(gifData, true);
+  if (!frames.length) throw new Error('No frames found in this GIF');
+
+  const width = gifData.lsd.width;
+  const height = gifData.lsd.height;
+
+  // GIF frames are stored as deltas — each frame only covers the sub-rectangle that
+  // changed, not the full canvas. To get a correct standalone image per frame, each one has
+  // to be composited onto a persistent canvas in sequence, respecting each frame's disposal
+  // method (whether the previous frame's region should be cleared before drawing the next).
+  const mainCanvas = document.createElement('canvas');
+  mainCanvas.width = width; mainCanvas.height = height;
+  const mainCtx = mainCanvas.getContext('2d');
+  const patchCanvas = document.createElement('canvas');
+  const patchCtx = patchCanvas.getContext('2d');
+
+  const zip = new JSZip();
+  let prevDisposal = null;
+  let prevRect = null;
+
+  for (let i = 0; i < frames.length; i++) {
+    const frame = frames[i];
+    if (prevDisposal === 2 && prevRect) {
+      mainCtx.clearRect(prevRect.left, prevRect.top, prevRect.width, prevRect.height);
+    }
+    patchCanvas.width = frame.dims.width;
+    patchCanvas.height = frame.dims.height;
+    const imageData = patchCtx.createImageData(frame.dims.width, frame.dims.height);
+    imageData.data.set(frame.patch);
+    patchCtx.putImageData(imageData, 0, 0);
+    mainCtx.drawImage(patchCanvas, frame.dims.left, frame.dims.top);
+
+    const blob = await new Promise(resolve => mainCanvas.toBlob(resolve, 'image/png'));
+    zip.file(`frame_${String(i + 1).padStart(4, '0')}.png`, blob);
+
+    prevDisposal = frame.disposalType;
+    prevRect = frame.dims;
+    setStatus(`Extracted frame ${i + 1} of ${frames.length}…`);
+    setProgress(((i + 1) / frames.length) * 85);
+  }
+
+  setStatus('Packaging ZIP…');
+  const zipBlob = await zip.generateAsync({ type: 'blob' }, meta => setProgress(85 + meta.percent * 0.15));
+  return { blob: zipBlob, filename: 'creator-media-studio-frames.zip', label: `${frames.length} frames · ${width}×${height} · .zip of .png` };
+}
+
+/* ================= CONVERT BUTTON — server check-and-increment happens FIRST ================= */
+document.getElementById('convertBtn').addEventListener('click', async () => {
+  if (files.length === 0) return;
+  const btn = document.getElementById('convertBtn');
+  btn.disabled = true;
+  hideResult();
+  setProgress(0);
+  setStatus('Checking your usage…');
+
+  // This is the enforcement point. The server is the only thing that decides whether this
+  // conversion is allowed — if it says no, we stop before touching any files.
+  let permit;
+  try {
+    const res = await fetch('/api/usage/check-and-increment', { method: 'POST', credentials: 'include' });
+    permit = await res.json();
+    usageState = { tier: permit.tier, used: permit.used, limit: permit.limit, remaining: permit.remaining };
+    renderUsageUI();
+    if (!res.ok) {
+      setStatus(permit.tier === 'user' ? 'Daily limit reached — resets at midnight UTC.' : 'Guest limit reached — sign up for 50/day.');
+      hideProgress();
+      return;
+    }
+  } catch (err) {
+    setStatus('Could not reach the server to check your usage. Try again.');
+    updateConvertState();
+    return;
+  }
+
+  setStatus('Starting…');
+  try {
+    let result;
+    if (mode === 'img2vid') result = await convertImagesToVideo();
+    else if (mode === 'img2gif') result = await convertImagesToGif();
+    else if (mode === 'vid2gif') result = await convertVideoToGif();
+    else if (mode === 'gif2img') result = await convertGifToImages();
+
+    setStatus('Done.');
+    setProgress(100);
+    showResult('Conversion ready', result.label, result.blob, result.filename);
+
+    if (currentUser) {
+      fetch('/api/account/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ mode, label: result.label, filename: result.filename }),
+      }).catch(() => {}); // history logging is cosmetic — never block the download on it
+    }
+  } catch (err) {
+    console.error(err);
+    setStatus('Something went wrong — try a smaller file or fewer images. (Your usage count was still spent — that\u2019s the tradeoff of checking the limit before processing.)');
+    hideProgress();
+  } finally {
+    updateConvertState();
+  }
+});
+</script>
+</body>
+</html>

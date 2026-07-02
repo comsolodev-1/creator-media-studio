@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Creator Media Studio</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .dash-wrap { max-width: 760px; margin: 0 auto; padding: 50px 24px 80px; }
+  .dash-header { margin-bottom: 30px; }
+  .dash-header .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 10px; }
+  .dash-header h1 { font-size: 1.9rem; }
+
+  .panel { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 6px; padding: 26px; margin-bottom: 20px; }
+  .panel h2 { font-size: 1.1rem; margin-bottom: 4px; }
+  .panel .panel-sub { color: var(--ink-dim); font-size: 0.85rem; margin-bottom: 18px; }
+
+  .usage-row { display: flex; align-items: center; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; }
+  .usage-track { width: 100%; height: 6px; background: var(--frame-off); border-radius: 3px; margin-top: 12px; overflow: hidden; }
+  .usage-fill { height: 100%; background: var(--accent); }
+
+  .history-list { list-style: none; }
+  .history-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 0.88rem; }
+  .history-item:last-child { border-bottom: none; }
+  .history-item .h-mode { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); background: rgba(232,84,42,0.1); padding: 2px 8px; border-radius: 3px; margin-right: 10px; }
+  .history-item .h-label { color: var(--ink-dim); }
+  .history-item .h-time { font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: var(--ink-dim); white-space: nowrap; }
+  .history-empty { color: var(--ink-dim); font-size: 0.88rem; font-family: 'IBM Plex Mono', monospace; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; color: var(--ink-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .field input { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font-family: 'IBM Plex Sans', sans-serif; font-size: 0.92rem; }
+  .field input:focus { outline: none; border-color: var(--accent); }
+
+  .inline-msg { font-size: 0.82rem; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; display: none; font-family: 'IBM Plex Mono', monospace; }
+  .inline-msg.err { background: rgba(232,84,42,0.1); border: 1px solid var(--accent); color: var(--accent); display: block; }
+  .inline-msg.ok { background: rgba(232,84,42,0.1); border: 1px solid var(--accent); color: var(--accent); display: block; }
+
+  .danger-zone { border-color: var(--accent); }
+  .danger-zone h2 { color: var(--accent); }
+</style>
+</head>
+<body data-theme="dark">
+
+<nav>
+  <a class="logo" href="index.html"><span class="dot"></span> Creator Media Studio</a>
+  <div class="nav-right">
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">☀</button>
+    <a class="btn" href="index.html">Converter</a>
+    <button class="btn" id="logoutBtn">Log out</button>
+  </div>
+</nav>
+
+<div class="dash-wrap">
+  <div class="dash-header">
+    <div class="eyebrow">Account</div>
+    <h1 id="welcomeMsg">Dashboard</h1>
+  </div>
+
+  <div class="panel">
+    <h2>Today's usage</h2>
+    <div class="panel-sub">Resets at midnight UTC.</div>
+    <div class="usage-row">
+      <span id="usageText">Loading…</span>
+      <span id="usageTier" class="mono"></span>
+    </div>
+    <div class="usage-track"><div class="usage-fill" id="usageFill" style="width:0%"></div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Conversion history</h2>
+    <div class="panel-sub">Last 100 conversions on this account.</div>
+    <ul class="history-list" id="historyList"><li class="history-empty">Loading…</li></ul>
+  </div>
+
+  <div class="panel">
+    <h2>Change name</h2>
+    <div class="panel-sub">Can't reuse your current name or any name you've used before.</div>
+    <div class="inline-msg" id="nameMsg"></div>
+    <form id="nameForm">
+      <div class="field">
+        <label for="newName">New name</label>
+        <input type="text" id="newName" maxlength="50" required>
+      </div>
+      <button type="submit" class="btn btn-solid">Update name</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Change password</h2>
+    <div class="panel-sub">Can't reuse your current password or any password you've used before.</div>
+    <div class="inline-msg" id="pwMsg"></div>
+    <form id="pwForm">
+      <div class="field">
+        <label for="currentPassword">Current password</label>
+        <input type="password" id="currentPassword" autocomplete="current-password" required>
+      </div>
+      <div class="field">
+        <label for="newPassword">New password</label>
+        <input type="password" id="newPassword" autocomplete="new-password" required>
+      </div>
+      <button type="submit" class="btn btn-solid">Update password</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Update recovery keyphrase</h2>
+    <div class="panel-sub">Requires your current password to confirm it's you.</div>
+    <div class="inline-msg" id="recMsg"></div>
+    <form id="recForm">
+      <div class="field">
+        <label for="recCurrentPassword">Current password</label>
+        <input type="password" id="recCurrentPassword" autocomplete="current-password" required>
+      </div>
+      <div class="field">
+        <label for="newKeyphrase">New recovery keyphrase</label>
+        <input type="text" id="newKeyphrase" required>
+      </div>
+      <button type="submit" class="btn btn-solid">Update keyphrase</button>
+    </form>
+  </div>
+
+  <div class="panel danger-zone">
+    <h2>Delete account</h2>
+    <div class="panel-sub">Permanent. Removes your account, usage history, and conversion history.</div>
+    <div class="inline-msg" id="delMsg"></div>
+    <form id="delForm">
+      <div class="field">
+        <label for="delPassword">Confirm password</label>
+        <input type="password" id="delPassword" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn" style="border-color: var(--accent); color: var(--accent);">Delete my account</button>
+    </form>
+  </div>
+</div>
+
+<footer>CREATOR MEDIA STUDIO — account settings<br>&copy; 2026 Creator Media Studio. All rights reserved. · <a href="terms.html">Terms &amp; Copyright</a></footer>
+
+<script>
+const themeToggle = document.getElementById('themeToggle');
+themeToggle.addEventListener('click', () => {
+  const body = document.body;
+  const isDark = body.getAttribute('data-theme') === 'dark';
+  body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  themeToggle.textContent = isDark ? '☾' : '☀';
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  window.location.href = 'login.html';
+});
+
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function showMsg(id, msg, ok) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'inline-msg ' + (ok ? 'ok' : 'err');
+}
+
+async function init() {
+  const meRes = await fetch('/api/auth/me', { credentials: 'include' });
+  const me = await meRes.json();
+  if (!me.user) { window.location.href = 'login.html'; return; }
+  document.getElementById('welcomeMsg').textContent = `Welcome back, ${me.user.name}`;
+
+  const usageRes = await fetch('/api/usage/status', { credentials: 'include' });
+  const usage = await usageRes.json();
+  document.getElementById('usageText').textContent = `${usage.used} / ${usage.limit} conversions used today`;
+  document.getElementById('usageTier').textContent = usage.tier === 'user' ? 'ACCOUNT TIER' : 'GUEST TIER';
+  document.getElementById('usageFill').style.width = Math.min(100, (usage.used / usage.limit) * 100) + '%';
+
+  const histRes = await fetch('/api/account/history', { credentials: 'include' });
+  const hist = await histRes.json();
+  const list = document.getElementById('historyList');
+  if (!hist.history || hist.history.length === 0) {
+    list.innerHTML = '<li class="history-empty">No conversions yet — head to the converter to get started.</li>';
+  } else {
+    list.innerHTML = hist.history.map(h => `
+      <li class="history-item">
+        <div><span class="h-mode">${escapeHtml(h.mode)}</span><span class="h-label">${escapeHtml(h.label || '')}</span></div>
+        <div class="h-time">${new Date(h.created_at).toLocaleString()}</div>
+      </li>`).join('');
+  }
+}
+init();
+
+document.getElementById('nameForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('newName').value.trim();
+  const res = await fetch('/api/account/name', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (!res.ok) { showMsg('nameMsg', data.error, false); return; }
+  showMsg('nameMsg', 'Name updated.', true);
+  document.getElementById('welcomeMsg').textContent = `Welcome back, ${data.name}`;
+  document.getElementById('newName').value = '';
+});
+
+document.getElementById('pwForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const currentPassword = document.getElementById('currentPassword').value;
+  const newPassword = document.getElementById('newPassword').value;
+  const res = await fetch('/api/account/password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  const data = await res.json();
+  if (!res.ok) { showMsg('pwMsg', data.error, false); return; }
+  showMsg('pwMsg', 'Password updated.', true);
+  document.getElementById('pwForm').reset();
+});
+
+document.getElementById('recForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const currentPassword = document.getElementById('recCurrentPassword').value;
+  const recoveryKeyphrase = document.getElementById('newKeyphrase').value;
+  const res = await fetch('/api/account/recovery-keyphrase', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ currentPassword, recoveryKeyphrase }),
+  });
+  const data = await res.json();
+  if (!res.ok) { showMsg('recMsg', data.error, false); return; }
+  showMsg('recMsg', 'Recovery keyphrase updated.', true);
+  document.getElementById('recForm').reset();
+});
+
+document.getElementById('delForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!confirm('This permanently deletes your account. Are you sure?')) return;
+  const password = document.getElementById('delPassword').value;
+  const res = await fetch('/api/account', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json();
+  if (!res.ok) { showMsg('delMsg', data.error, false); return; }
+  window.location.href = 'index.html';
+});
+</script>
+</body>
+</html>

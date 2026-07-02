@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign up — Creator Media Studio</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-theme="dark">
+
+<nav>
+  <a class="logo" href="index.html"><span class="dot"></span> Creator Media Studio</a>
+  <div class="nav-right">
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">☀</button>
+    <a class="btn" href="login.html">Log in</a>
+  </div>
+</nav>
+
+<div class="auth-wrap">
+  <div class="auth-header">
+    <div class="eyebrow">New account</div>
+    <h1>Create your account</h1>
+    <p>50 conversions a day, saved history, and account settings.</p>
+  </div>
+
+  <div class="auth-card">
+    <div class="form-error" id="formError"></div>
+
+    <form id="signupForm" novalidate>
+      <div class="field">
+        <label for="name">Preferred name</label>
+        <input type="text" id="name" name="name" autocomplete="name" maxlength="50" required>
+        <div class="field-error" id="err-name"></div>
+      </div>
+
+      <div class="field">
+        <label for="emailLocal">Email</label>
+        <div class="email-suffix-wrap">
+          <input type="text" id="emailLocal" name="emailLocal" autocomplete="off" placeholder="yourname" required>
+          <span class="email-suffix">@creator.com</span>
+        </div>
+        <div class="field-hint">Accounts require a creator.com address.</div>
+        <div class="field-error" id="err-email"></div>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="new-password" required>
+        <ul class="pw-checklist" id="pwChecklist">
+          <li id="pw-len"><span class="mark">○</span>8–20 characters</li>
+          <li id="pw-upper"><span class="mark">○</span>1 uppercase</li>
+          <li id="pw-lower"><span class="mark">○</span>1 lowercase</li>
+          <li id="pw-num"><span class="mark">○</span>1 number</li>
+          <li id="pw-special"><span class="mark">○</span>1 special character</li>
+          <li id="pw-emoji"><span class="mark">○</span>no emoji</li>
+        </ul>
+        <div class="field-error" id="err-password"></div>
+      </div>
+
+      <div class="field">
+        <label for="birthday">Birthday</label>
+        <input type="date" id="birthday" name="birthday" autocomplete="bday" required>
+        <div class="field-hint">You must be 13 or older.</div>
+        <div class="field-error" id="err-birthday"></div>
+      </div>
+
+      <div class="field">
+        <label for="recoveryKeyphrase">Recovery keyphrase</label>
+        <input type="text" id="recoveryKeyphrase" name="recoveryKeyphrase" autocomplete="off" placeholder="e.g. creator-userkey" required>
+        <div class="field-hint">Used to verify your identity if you lose access. Not case-sensitive — store it somewhere safe.</div>
+        <div class="field-error" id="err-recoveryKeyphrase"></div>
+      </div>
+
+      <div class="field terms-field">
+        <label class="terms-check">
+          <input type="checkbox" id="agreeTerms" required>
+          <span>I agree to the <a href="terms.html" target="_blank">Terms of Service &amp; Copyright Notice</a>.</span>
+        </label>
+        <div class="field-error" id="err-agreeTerms"></div>
+      </div>
+
+      <button type="submit" class="btn btn-solid btn-block" id="submitBtn" disabled>Create account</button>
+    </form>
+  </div>
+
+  <div class="auth-switch">Already have an account? <a href="login.html">Log in</a></div>
+</div>
+
+<footer>CREATOR MEDIA STUDIO — accounts are restricted to @creator.com addresses<br>&copy; 2026 Creator Media Studio. All rights reserved. · <a href="terms.html">Terms &amp; Copyright</a></footer>
+
+<script>
+const themeToggle = document.getElementById('themeToggle');
+themeToggle.addEventListener('click', () => {
+  const body = document.body;
+  const isDark = body.getAttribute('data-theme') === 'dark';
+  body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  themeToggle.textContent = isDark ? '☾' : '☀';
+});
+
+const PASSWORD_RE_PARTS = {
+  len: pw => pw.length >= 8 && pw.length <= 20,
+  upper: pw => /[A-Z]/.test(pw),
+  lower: pw => /[a-z]/.test(pw),
+  num: pw => /\d/.test(pw),
+  special: pw => /[^A-Za-z0-9]/.test(pw),
+  emoji: pw => !/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/u.test(pw),
+};
+
+const pwInput = document.getElementById('password');
+pwInput.addEventListener('input', () => {
+  const pw = pwInput.value;
+  Object.entries(PASSWORD_RE_PARTS).forEach(([key, test]) => {
+    const li = document.getElementById('pw-' + key);
+    const pass = test(pw);
+    li.classList.toggle('ok', pass);
+    li.querySelector('.mark').textContent = pass ? '✓' : '○';
+  });
+});
+
+function showFieldError(field, msg) {
+  const el = document.getElementById('err-' + field);
+  const input = document.getElementById(field === 'email' ? 'emailLocal' : field);
+  if (el) { el.textContent = msg; el.classList.toggle('show', !!msg); }
+  if (input) input.classList.toggle('invalid', !!msg);
+}
+function clearFieldErrors() {
+  ['name', 'email', 'password', 'birthday', 'recoveryKeyphrase', 'agreeTerms'].forEach(f => showFieldError(f, ''));
+}
+function showFormError(msg) {
+  const el = document.getElementById('formError');
+  el.textContent = msg;
+  el.classList.toggle('show', !!msg);
+}
+
+const agreeCheckbox = document.getElementById('agreeTerms');
+const submitBtnEl = document.getElementById('submitBtn');
+agreeCheckbox.addEventListener('change', () => { submitBtnEl.disabled = !agreeCheckbox.checked; });
+
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearFieldErrors();
+  showFormError('');
+
+  const name = document.getElementById('name').value.trim();
+  const emailLocal = document.getElementById('emailLocal').value.trim();
+  const email = emailLocal + '@creator.com';
+  const password = document.getElementById('password').value;
+  const birthday = document.getElementById('birthday').value;
+  const recoveryKeyphrase = document.getElementById('recoveryKeyphrase').value;
+  const agreedToTerms = document.getElementById('agreeTerms').checked;
+
+  // Client-side checks are instant feedback only — the server re-validates everything and
+  // is the only copy of these rules that's actually trusted.
+  let hasError = false;
+  if (!name) { showFieldError('name', 'Enter a name.'); hasError = true; }
+  if (!emailLocal || !/^[a-z0-9._-]{1,64}$/i.test(emailLocal)) { showFieldError('email', 'Enter a valid creator.com username.'); hasError = true; }
+  if (!Object.values(PASSWORD_RE_PARTS).every(test => test(password))) { showFieldError('password', 'Password doesn\u2019t meet the requirements above.'); hasError = true; }
+  if (!birthday) { showFieldError('birthday', 'Enter your birthday.'); hasError = true; }
+  if (!recoveryKeyphrase || recoveryKeyphrase.trim().length < 6) { showFieldError('recoveryKeyphrase', 'At least 6 characters.'); hasError = true; }
+  if (!agreedToTerms) { showFieldError('agreeTerms', 'You must agree to the Terms of Service to create an account.'); hasError = true; }
+  if (hasError) return;
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Creating account…';
+
+  try {
+    const res = await fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name, email, password, birthday, recoveryKeyphrase, agreedToTerms }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showFormError(data.error || 'Something went wrong. Try again.');
+      btn.disabled = false;
+      btn.textContent = 'Create account';
+      return;
+    }
+    window.location.href = 'index.html';
+  } catch (err) {
+    showFormError('Could not reach the server. Is it running?');
+    btn.disabled = false;
+    btn.textContent = 'Create account';
+  }
+});
+</script>
+</body>
+</html>
