@@ -18,7 +18,7 @@ const app = express();
 // req.ip to reflect the real client IP via X-Forwarded-For instead of the proxy's own IP —
 // otherwise every guest collapses into one bucket (too strict) or the header becomes
 // spoofable noise (too loose, defeats the limit). Uncomment when you deploy:
-// app.set('trust proxy', 1);
+app.set('trust proxy', 1);
 
 app.use(express.json());
 app.use(cookieParser());
