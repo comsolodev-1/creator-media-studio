@@ -60,6 +60,21 @@
       </div>
       <button type="submit" class="btn btn-solid btn-block" id="recoverySubmitBtn">Verify keyphrase</button>
     </form>
+    <div class="auth-switch" style="margin-top: 14px;">Don\u2019t remember your keyphrase? <a href="#" id="showEmailReset">Email me a reset link instead</a></div>
+  </div>
+
+  <div class="auth-card" id="emailResetCard" style="display:none; margin-top: 16px;">
+    <button type="button" class="auth-back-btn" id="backToLoginFromEmailReset" aria-label="Back to login form">&larr; Back to login</button>
+    <div class="form-error" id="emailResetError"></div>
+    <div class="form-success" id="emailResetSuccess"></div>
+    <form id="emailResetForm" novalidate>
+      <div class="field">
+        <label for="emailResetEmail">Email</label>
+        <input type="email" id="emailResetEmail" placeholder="yourname@creator.com" required>
+      </div>
+      <button type="submit" class="btn btn-solid btn-block" id="emailResetSubmitBtn">Send reset link</button>
+    </form>
+    <div id="devEmailHelper" style="display:none; margin-top: 14px;"></div>
   </div>
 
   <div class="auth-card" id="resetCard" style="display:none; margin-top: 16px;">
@@ -76,7 +91,7 @@
     </form>
   </div>
 
-  <div class="auth-switch" id="signupSwitch">Don't have an account? <a href="signup.html">Sign up</a></div>
+  <div class="auth-switch" id="signupSwitch">Don\u2019t have an account? <a href="signup.html">Sign up</a></div>
 </div>
 
 <footer>CREATOR MEDIA STUDIO<br>&copy; 2026 Creator Media Studio. All rights reserved. · <a href="terms.html">Terms &amp; Copyright</a></footer>
@@ -91,7 +106,7 @@ themeToggle.addEventListener('click', () => {
 });
 
 function showCard(id) {
-  ['loginCard', 'recoveryCard', 'resetCard'].forEach(cardId => {
+  ['loginCard', 'recoveryCard', 'emailResetCard', 'resetCard'].forEach(cardId => {
     document.getElementById(cardId).style.display = cardId === id ? 'block' : 'none';
   });
 }
@@ -102,6 +117,11 @@ document.getElementById('showRecovery').addEventListener('click', (e) => {
 });
 document.getElementById('backToLogin').addEventListener('click', () => showCard('loginCard'));
 document.getElementById('backToLoginFromReset').addEventListener('click', () => showCard('loginCard'));
+document.getElementById('backToLoginFromEmailReset').addEventListener('click', () => showCard('loginCard'));
+document.getElementById('showEmailReset').addEventListener('click', (e) => {
+  e.preventDefault();
+  showCard('emailResetCard');
+});
 
 function showFormError(id, msg) {
   const el = document.getElementById(id);
@@ -174,6 +194,55 @@ document.getElementById('recoveryForm').addEventListener('submit', async (e) => 
     btn.disabled = false;
     btn.textContent = 'Verify keyphrase';
     showFormError('recoveryError', 'Could not reach the server. Is it running?');
+  }
+});
+
+document.getElementById('emailResetForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  showFormError('emailResetError', '');
+  showFormError('emailResetSuccess', '');
+  const email = document.getElementById('emailResetEmail').value.trim();
+  const btn = document.getElementById('emailResetSubmitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Sending…';
+
+  try {
+    const res = await fetch('/api/auth/request-reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    btn.disabled = false;
+    btn.textContent = 'Send reset link';
+    if (!res.ok) {
+      showFormError('emailResetError', data.error || 'Could not send reset link.');
+      return;
+    }
+    document.getElementById('emailResetSuccess').textContent = data.message;
+    document.getElementById('emailResetSuccess').classList.add('show');
+
+    // Dev mode only (no SMTP configured on the server): surface a direct link to the reset
+    // page instead of leaving this untestable without a real inbox. This helper block simply
+    // doesn't render at all once real SMTP is configured — see server/email.js.
+    if (data.devMode) {
+      const devBox = document.getElementById('devEmailHelper');
+      try {
+        const emailRes = await fetch('/api/auth/_dev/last-email');
+        if (emailRes.ok) {
+          const emailData = await emailRes.json();
+          const match = emailData.text.match(/https?:\/\/\S+/);
+          if (match) {
+            devBox.innerHTML = `<div class="field-hint">Dev mode: no SMTP configured, so nothing was actually emailed. <a href="${match[0]}">Open the reset link</a> to continue testing.</div>`;
+            devBox.style.display = 'block';
+          }
+        }
+      } catch (err) { /* dev helper is best-effort, ignore failures */ }
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Send reset link';
+    showFormError('emailResetError', 'Could not reach the server. Is it running?');
   }
 });
 

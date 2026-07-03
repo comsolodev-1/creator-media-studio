@@ -63,6 +63,18 @@
   .controls { display: flex; align-items: center; gap: 16px; margin-top: 22px; flex-wrap: wrap; }
   .control-group { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--ink-dim); font-family: 'IBM Plex Mono', monospace; }
   .control-group input[type=range] { accent-color: var(--accent); }
+  .control-group select, .control-group input[type=text] {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; padding: 5px 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 3px;
+  }
+  .control-group input[type=file] {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: var(--ink-dim);
+  }
+  .control-group input[type=file]::file-selector-button {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; padding: 4px 10px;
+    border: 1px solid var(--line); background: var(--bg-raised); color: var(--ink);
+    border-radius: 3px; cursor: pointer; margin-right: 6px;
+  }
 
   .res-picker { display: inline-flex; gap: 4px; }
   .res-btn {
@@ -388,6 +400,17 @@ function bindResPicker(id) {
   });
 }
 
+function watermarkHTML(idPrefix) {
+  return `<div class="control-group">Watermark <input type="text" id="${idPrefix}Text" placeholder="optional text" maxlength="40" style="width: 130px;">
+    <select id="${idPrefix}Pos" class="pos-select">
+      <option value="bottom-right">Bottom right</option>
+      <option value="bottom-left">Bottom left</option>
+      <option value="top-right">Top right</option>
+      <option value="top-left">Top left</option>
+    </select>
+  </div>`;
+}
+
 function renderOptions() {
   const area = document.getElementById('optionsArea');
   if (mode === 'img2vid') {
@@ -395,15 +418,37 @@ function renderOptions() {
       <div class="control-group">Seconds per image <input type="range" id="optSecs" min="0.5" max="4" step="0.5" value="1.5"><span id="optSecsVal">1.5s</span></div>
       <div class="control-group">Frame rate <input type="range" id="optFps" min="10" max="30" step="5" value="20"><span id="optFpsVal">20fps</span></div>
       ${resPickerHTML('optResVid', '1080p', false)}
+    </div>
+    <div class="controls">
+      <div class="control-group">Transition
+        <select id="optTransition">
+          <option value="none">Hard cut</option>
+          <option value="crossfade" selected>Crossfade</option>
+        </select>
+      </div>
+      <div class="control-group" id="optTransitionLenGroup">Length <input type="range" id="optTransitionLen" min="0.2" max="1.5" step="0.1" value="0.5"><span id="optTransitionLenVal">0.5s</span></div>
+    </div>
+    <div class="controls">
+      <div class="control-group">Background music <input type="file" id="optMusicFile" accept="audio/*" style="width: 170px;"></div>
+      <div class="control-group">Volume <input type="range" id="optMusicVolume" min="0" max="1" step="0.05" value="0.5"><span id="optMusicVolumeVal">50%</span></div>
+    </div>
+    <div class="controls">
+      ${watermarkHTML('optWatermarkVid')}
     </div>`;
     bindRangeDisplay('optSecs', 'optSecsVal', 's');
     bindRangeDisplay('optFps', 'optFpsVal', 'fps');
+    bindRangeDisplay('optTransitionLen', 'optTransitionLenVal', 's');
+    bindRangeDisplay('optMusicVolume', 'optMusicVolumeVal', '%', v => Math.round(v * 100));
     bindResPicker('optResVid');
+    document.getElementById('optTransition').addEventListener('change', (e) => {
+      document.getElementById('optTransitionLenGroup').style.display = e.target.value === 'crossfade' ? 'flex' : 'none';
+    });
   } else if (mode === 'img2gif') {
     area.innerHTML = `<div class="controls">
       <div class="control-group">Delay per frame <input type="range" id="optDelay" min="100" max="1000" step="50" value="400"><span id="optDelayVal">400ms</span></div>
       ${resPickerHTML('optResImgGif', '1080p', true)}
-    </div>`;
+    </div>
+    <div class="controls">${watermarkHTML('optWatermarkImgGif')}</div>`;
     bindRangeDisplay('optDelay', 'optDelayVal', 'ms');
     bindResPicker('optResImgGif');
   } else if (mode === 'vid2gif') {
@@ -411,7 +456,8 @@ function renderOptions() {
       <div class="control-group">Clip length <input type="range" id="optDur" min="1" max="8" step="1" value="3"><span id="optDurVal">3s</span></div>
       <div class="control-group">Sample rate <input type="range" id="optSample" min="5" max="15" step="1" value="10"><span id="optSampleVal">10fps</span></div>
       ${resPickerHTML('optResVidGif', '1080p', true)}
-    </div>`;
+    </div>
+    <div class="controls">${watermarkHTML('optWatermarkVidGif')}</div>`;
     bindRangeDisplay('optDur', 'optDurVal', 's');
     bindRangeDisplay('optSample', 'optSampleVal', 'fps');
     bindResPicker('optResVidGif');
@@ -421,9 +467,27 @@ function renderOptions() {
     </div>`;
   }
 }
-function bindRangeDisplay(id, valId, unit) {
+function bindRangeDisplay(id, valId, unit, formatter) {
   const el = document.getElementById(id); const val = document.getElementById(valId);
-  el.addEventListener('input', () => val.textContent = el.value + unit);
+  el.addEventListener('input', () => val.textContent = (formatter ? formatter(el.value) : el.value) + unit);
+}
+function drawWatermark(ctx, w, h, text, position) {
+  if (!text) return;
+  const pad = Math.round(Math.min(w, h) * 0.03);
+  const fontSize = Math.max(14, Math.round(Math.min(w, h) * 0.035));
+  ctx.save();
+  ctx.font = `600 ${fontSize}px 'IBM Plex Sans', sans-serif`;
+  let x, y, align;
+  if (position === 'top-left') { x = pad; y = pad + fontSize; align = 'left'; }
+  else if (position === 'top-right') { x = w - pad; y = pad + fontSize; align = 'right'; }
+  else if (position === 'bottom-left') { x = pad; y = h - pad; align = 'left'; }
+  else { x = w - pad; y = h - pad; align = 'right'; }
+  ctx.textAlign = align;
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 5;
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.fillText(text, x, y);
+  ctx.restore();
 }
 renderOptions();
 
@@ -471,6 +535,13 @@ async function convertImagesToVideo() {
   const secs = parseFloat(document.getElementById('optSecs').value);
   const fps = parseInt(document.getElementById('optFps').value);
   const resPreset = document.querySelector('#optResVid .res-btn.active').dataset.res;
+  const transitionType = document.getElementById('optTransition').value;
+  const transitionSecs = Math.min(secs * 0.9, parseFloat(document.getElementById('optTransitionLen').value));
+  const watermarkText = document.getElementById('optWatermarkVidText').value.trim();
+  const watermarkPos = document.getElementById('optWatermarkVidPos').value;
+  const musicFile = document.getElementById('optMusicFile').files[0] || null;
+  const musicVolume = parseFloat(document.getElementById('optMusicVolume').value);
+
   const imgs = await Promise.all(files.map(loadImage));
 
   // BUG FIX: this used to take Math.max() of widths and Math.max() of heights *independently*
@@ -487,14 +558,48 @@ async function convertImagesToVideo() {
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  const stream = canvas.captureStream(fps);
-  const chunks = [];
 
+  let stream = canvas.captureStream(fps);
+  let audioEl = null;
+
+  if (musicFile) {
+    setStatus('Loading background music…');
+    audioEl = document.createElement('audio');
+    audioEl.src = URL.createObjectURL(musicFile);
+    audioEl.loop = true;
+    audioEl.volume = musicVolume;
+    await new Promise((resolve) => {
+      audioEl.oncanplaythrough = resolve;
+      audioEl.onerror = resolve; // don't let a bad audio file block the whole export
+      audioEl.load();
+    });
+    try {
+      // captureStream() on a playing <audio> element gives a live MediaStream of its audio —
+      // this is what lets a background track end up mixed into the exported WebM. Playback
+      // has to actually start for the stream to carry audio frames; this is triggered by the
+      // Convert button click, so it counts as a user gesture and isn't blocked by autoplay
+      // policies.
+      await audioEl.play();
+      const audioStream = audioEl.captureStream ? audioEl.captureStream() : audioEl.mozCaptureStream();
+      const audioTracks = audioStream.getAudioTracks();
+      if (audioTracks.length) {
+        stream = new MediaStream([...stream.getVideoTracks(), ...audioTracks]);
+      }
+    } catch (err) {
+      console.warn('Could not attach background music, continuing without it:', err);
+      audioEl = null;
+    }
+  }
+
+  const chunks = [];
   // VP8 is used first rather than VP9: several Chromium versions have had real-world bugs
   // producing corrupted/unplayable output specifically from VP9 canvas captureStream
   // recordings (plays in the browser that made it, fails or glitches everywhere else,
-  // including VLC). VP8 canvas capture is the long-standing reliable path.
-  const mimeCandidates = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
+  // including VLC). VP8 canvas capture is the long-standing reliable path. Opus is added to
+  // the codec string only when there's actually an audio track to encode.
+  const mimeCandidates = audioEl
+    ? ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm']
+    : ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm'];
   const mimeType = mimeCandidates.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
 
   // Browsers default to a low bitrate (often ~2.5Mbps) for MediaRecorder regardless of
@@ -503,16 +608,44 @@ async function convertImagesToVideo() {
   // get the same bitrate as a 480p one.
   const pixelCount = w * h;
   const videoBitsPerSecond = Math.min(30_000_000, Math.max(8_000_000, Math.round(pixelCount * 0.15)));
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond });
+  const recorderOpts = { mimeType, videoBitsPerSecond };
+  if (audioEl) recorderOpts.audioBitsPerSecond = 128_000;
+  const recorder = new MediaRecorder(stream, recorderOpts);
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
   const donePromise = new Promise(resolve => { recorder.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' })); });
   recorder.start();
+
+  const frameIntervalMs = 1000 / fps;
   for (let i = 0; i < imgs.length; i++) {
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
-    drawContain(ctx, imgs[i], w, h);
-    setStatus(`Rendering frame ${i + 1} of ${imgs.length}…`);
-    setProgress(((i + 1) / imgs.length) * 100);
-    await sleep(secs * 1000);
+    const isLast = i === imgs.length - 1;
+    const useCrossfade = transitionType === 'crossfade' && !isLast;
+    const holdMs = useCrossfade ? Math.max(0, secs * 1000 - transitionSecs * 1000) : secs * 1000;
+
+    const holdStart = performance.now();
+    while (performance.now() - holdStart < holdMs) {
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+      drawContain(ctx, imgs[i], w, h);
+      drawWatermark(ctx, w, h, watermarkText, watermarkPos);
+      await sleep(frameIntervalMs);
+    }
+    setStatus(`Rendering image ${i + 1} of ${imgs.length}…`);
+    setProgress(((i + 1) / imgs.length) * 90);
+
+    if (useCrossfade) {
+      const transStart = performance.now();
+      const transMs = transitionSecs * 1000;
+      while (performance.now() - transStart < transMs) {
+        const t = Math.min(1, (performance.now() - transStart) / transMs);
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+        ctx.globalAlpha = 1;
+        drawContain(ctx, imgs[i], w, h);
+        ctx.globalAlpha = t;
+        drawContain(ctx, imgs[i + 1], w, h);
+        ctx.globalAlpha = 1;
+        drawWatermark(ctx, w, h, watermarkText, watermarkPos);
+        await sleep(frameIntervalMs);
+      }
+    }
   }
   // Hold on the final frame for a couple of frame-intervals and force a data flush before
   // stopping. Stopping immediately after the last draw can cut off before captureStream has
@@ -523,8 +656,15 @@ async function convertImagesToVideo() {
   if (recorder.state === 'recording') recorder.requestData();
   await sleep(50);
   recorder.stop();
+  if (audioEl) audioEl.pause();
   const blob = await donePromise;
-  return { blob, filename: 'creator-media-studio.webm', label: `${imgs.length} images · ${fps}fps · ${w}×${h} · ${(secs*imgs.length).toFixed(1)}s` };
+  const musicNote = audioEl ? ' · music' : '';
+  const transitionNote = transitionType === 'crossfade' ? ' · crossfade' : '';
+  return {
+    blob,
+    filename: 'creator-media-studio.webm',
+    label: `${imgs.length} images · ${fps}fps · ${w}×${h}${transitionNote}${musicNote} · ${(secs * imgs.length).toFixed(1)}s`,
+  };
 }
 function drawContain(ctx, img, w, h) {
   const scale = Math.min(w / img.naturalWidth || w / img.videoWidth, h / img.naturalHeight || h / img.videoHeight);
@@ -541,6 +681,8 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function convertImagesToGif() {
   const delay = parseInt(document.getElementById('optDelay').value);
   const resPreset = document.querySelector('#optResImgGif .res-btn.active').dataset.res;
+  const watermarkText = document.getElementById('optWatermarkImgGifText').value.trim();
+  const watermarkPos = document.getElementById('optWatermarkImgGifPos').value;
   const workerUrl = await getGifWorkerUrl();
   const imgs = await Promise.all(files.map(loadImage));
 
@@ -557,6 +699,7 @@ async function convertImagesToGif() {
   imgs.forEach((img, i) => {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH);
     drawContain(ctx, img, outW, outH);
+    drawWatermark(ctx, outW, outH, watermarkText, watermarkPos);
     gif.addFrame(ctx, { copy: true, delay });
     setStatus(`Queued frame ${i + 1} of ${imgs.length}…`);
     setProgress(((i + 1) / imgs.length) * 40);
@@ -573,6 +716,8 @@ async function convertVideoToGif() {
   const dur = parseInt(document.getElementById('optDur').value);
   const sampleFps = parseInt(document.getElementById('optSample').value);
   const resPreset = document.querySelector('#optResVidGif .res-btn.active').dataset.res;
+  const watermarkText = document.getElementById('optWatermarkVidGifText').value.trim();
+  const watermarkPos = document.getElementById('optWatermarkVidGifPos').value;
   const workerUrl = await getGifWorkerUrl();
   const file = files[0];
   const video = document.createElement('video');
@@ -594,6 +739,7 @@ async function convertVideoToGif() {
     await new Promise(res => { video.onseeked = res; });
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH);
     drawContain(ctx, video, outW, outH);
+    drawWatermark(ctx, outW, outH, watermarkText, watermarkPos);
     gif.addFrame(ctx, { copy: true, delay: Math.round(1000 / sampleFps) });
     setStatus(`Sampling frame ${i + 1} of ${frameCount}…`);
     setProgress(((i + 1) / frameCount) * 40);

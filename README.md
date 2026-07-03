@@ -30,42 +30,83 @@ mode, devtools tampering, or spamming requests.
 
 ## Stack
 
-- **Backend:** Node.js + Express, `node:sqlite` (built into Node 22+, no native compile step),
-  bcryptjs, jsonwebtoken, httpOnly cookies, express-rate-limit.
+- **Backend:** Node.js + Express, **Postgres via `pg`** (Neon-compatible — see below),
+  bcryptjs, jsonwebtoken, httpOnly cookies, express-rate-limit, nodemailer.
 - **Frontend:** Static HTML/CSS/vanilla JS, served by the same Express server (same-origin, so
   no CORS setup needed and the cookie "just works"). Media conversion runs entirely in the
-  browser via Canvas, MediaRecorder, and gif.js — no files are ever uploaded anywhere.
+  browser via Canvas, MediaRecorder, gif.js, gifuct-js, and JSZip — no media files are ever
+  uploaded anywhere.
+
+## Database: Neon (Postgres)
+
+The app runs on Postgres. [Neon](https://neon.tech) is a good fit because it's serverless
+Postgres with a generous free tier and no server to manage.
+
+1. Create a Neon project and copy its connection string from the dashboard — it looks like:
+   `postgresql://user:password@ep-xxxx-pooler.us-east-2.aws.neon.tech/dbname?sslmode=require`
+2. Set that as `DATABASE_URL` in `.env` (or your host's environment variables).
+3. That's it — `server.js` calls `db.init()` on boot, which creates every table
+   (`CREATE TABLE IF NOT EXISTS`) and safely no-ops if they already exist. No separate
+   migration step or CLI tool required.
+
+`db.js` doesn't know or care that it's talking to Neon specifically — any Postgres 13+
+instance works the same way, which is what local development and the test suite use instead
+(see below). SSL is auto-detected from the connection string (`sslmode=require` or a
+`neon.tech` host both trigger it) so you don't need to configure that separately.
 
 ## Run it locally
 
 ```bash
 cd server
-cp .env.example .env    # then edit JWT_SECRET and IP_SALT to random strings
+cp .env.example .env    # then edit JWT_SECRET, IP_SALT, and DATABASE_URL
 npm install
 npm start
 ```
 
 Visit `http://localhost:3000`. The frontend and backend are served from the same origin.
 
-`npm start` runs `node --experimental-sqlite server.js` — the flag is required on Node 22/23;
-once you're on a Node version where `node:sqlite` has been unflagged you can drop it.
+For local development without Neon, point `DATABASE_URL` at any local Postgres instance —
+`.env.example` includes a working default for `postgres://postgres:devpass@localhost:5432/creator_media_studio`.
+
+## Running the tests
+
+```bash
+cd server
+createdb creator_media_studio_test   # once, or point at any disposable Postgres database
+DATABASE_URL=postgres://postgres:devpass@localhost:5432/creator_media_studio_test npm test
+```
+
+Uses Node's built-in test runner (`node --test`) against a real Postgres database — no mocks
+for the database layer, since the whole point of several of these tests (especially the
+concurrency one) is proving behavior that only shows up against a real database engine. Covers
+signup/login validation, terms-of-service enforcement, the recovery-keyphrase whitespace fix,
+name/password reuse protection, account deletion invalidating the session, the email-based
+reset flow, and — the one that matters most — **40 simultaneous requests against a 20-request
+limit resolving to exactly 20 successes**, proving the advisory-lock approach in
+`checkAndIncrement` actually holds under real concurrency and not just sequential calls.
 
 ## Project layout
 
 ```
 server/
-  server.js            Express app, mounts routes, serves client/ as static files
-  db.js                 SQLite schema (users, usage tables)
-  validation.js          All signup/password/age/email rules — enforced here, not just client-side
-  middleware/auth.js     Reads the session cookie, hashes guest IPs, issues JWTs
-  routes/auth.js         signup / login / logout / me / recover
-  routes/usage.js         status (read-only) / check-and-increment (the actual limit gate)
+  app.js                 Express app config (routes, middleware) — exported, doesn't listen
+  server.js               Entry point: loads env, initializes the DB schema, starts listening
+  db.js                    Postgres/Neon connection, schema, and the concurrency-safe usage-limit logic
+  email.js                  Sends password-reset emails; logs them locally when no SMTP is configured
+  validation.js             All signup/password/age/email rules — enforced here, not just client-side
+  middleware/auth.js         Reads the session cookie, hashes guest IPs, issues JWTs
+  routes/auth.js              signup / login / logout / me / recover / request-reset / reset-password
+  routes/usage.js               status (read-only) / check-and-increment (the actual limit gate)
+  routes/account.js              history / name / password / recovery-keyphrase / delete
+  tests/                          node:test suite — validation unit tests + live API integration tests
 client/
-  index.html              Landing page + converter, calls the usage API before every conversion
-  signup.html              @creator.com signup form with live password checklist
-  login.html                Login + recovery-keyphrase fallback
-  dashboard.html              Usage, conversion history, and account settings (name/password/recovery/delete)
-  styles.css                   Shared design system
+  index.html              Landing page + converter (4 modes), calls the usage API before every conversion
+  signup.html               @creator.com signup form with live password checklist + terms agreement
+  login.html                  Login + keyphrase recovery + email-based reset request
+  reset.html                    Standalone page for the emailed reset link
+  dashboard.html                 Usage, conversion history, and account settings
+  terms.html                      Terms of Service & copyright notice
+  styles.css                       Shared design system
 ```
 
 ## A bug that was caught and fixed during testing
@@ -80,9 +121,29 @@ deleting an account and then re-using the old cookie now correctly falls back to
 
 ## What's still a stub (next phases)
 
-- **Password reset after recovery-keyphrase verification** currently only confirms the
-  keyphrase matches; it doesn't yet let the user set a new password from that state.
 - Guest usage resets are calendar-day (UTC) based — no rolling 24h window yet.
+
+## Phase 5: real bugs found and fixed
+
+Two things reported as broken turned out to be real, verified bugs — not just missing
+features:
+
+- **Recovery keyphrase "doesn't match" even when it's right.** Root cause:
+  `normalizeRecoveryKeyphrase` only trimmed leading/trailing whitespace, not internal runs. A
+  multi-word keyphrase typed with a different number of spaces between words at recovery time
+  than at signup time (e.g. "my recovery phrase" vs "my  recovery   phrase") would hash
+  differently and never match, even though it's the same phrase to a person. Fixed by
+  collapsing all internal whitespace to single spaces during normalization, on both signup and
+  recovery. Verified with a live test using deliberately mismatched spacing.
+- **The recovery flow was a genuine dead end.** Keyphrase verification only confirmed a match
+  and displayed a message — there was no actual way to set a new password afterward, and no
+  way to navigate back to the login form once you'd clicked "Forgot password?" (an accessibility
+  gap: no keyboard/focus path back). Both fixed: verification now issues a short-lived (10
+  minute), single-purpose JWT that unlocks a real "set new password" step (with the same reuse
+  protection as the dashboard's password change), and every recovery-related card has an
+  explicit, focusable "← Back to login" button. Full flow — signup → recover with mismatched
+  whitespace → verify → set new password → confirm old password no longer works → confirm new
+  password logs in — tested live end-to-end.
 
 ## Phase 4: quality fixes, GIF→Images, and Terms of Service
 
@@ -118,16 +179,73 @@ deleting an account and then re-using the old cookie now correctly falls back to
 
 ## Deploying
 
-Any host that runs a persistent Node process works — the plan you outlined originally
-(Render, Railway, or Fly.io) is a good fit. Two things to set when you deploy:
+Any host that runs a persistent Node process works (Render, Railway, Fly.io). Set these
+environment variables:
 
-1. Set real `JWT_SECRET` and `IP_SALT` values (long random strings) as environment variables —
-   don't ship the `.env.example` defaults.
-2. If you're behind a reverse proxy (which all three of those platforms use), uncomment
-   `app.set('trust proxy', 1)` in `server.js` — otherwise every guest will appear to share the
+1. `DATABASE_URL` — your Neon connection string (see above).
+2. Real `JWT_SECRET` and `IP_SALT` values (long random strings) — don't ship the
+   `.env.example` defaults.
+3. `APP_URL` — your deployed domain, used to build the link inside password-reset emails.
+   Falls back to the request's own host if unset, which is fine for local dev but should be
+   set explicitly once deployed.
+4. `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM` — real SMTP credentials
+   once you have a provider. Without these, password-reset emails are logged to the server
+   console instead of sent (see `server/email.js`) — fine for development, not for production.
+5. If you're behind a reverse proxy (which all three of those platforms use), uncomment
+   `app.set('trust proxy', 1)` in `app.js` — otherwise every guest will appear to share the
    proxy's IP, and the guest limit will be far too strict (or, if you get this wrong the other
    way, spoofable). This is called out with a comment right above that line.
 
-`data.sqlite` is a single file — back it up like any file, or swap `db.js` for a hosted Postgres
-connection later if you outgrow single-file SQLite (the query patterns will translate directly;
-only the connection setup changes).
+**A note on the rate limiters:** `express-rate-limit`'s default in-memory store means limits
+are per-process and reset on restart/redeploy. That's fine for a single instance, but if you
+ever scale to multiple server instances behind a load balancer, each instance tracks its own
+counts independently — the actual enforced limit becomes (per-instance limit × instance
+count). Worth switching to a shared store (e.g. `rate-limit-redis`) if/when that happens; not
+needed for a single instance.
+
+## Phase 6: Neon/Postgres migration, rolling limits, email reset, tests, and polish
+
+- **Migrated the database from local SQLite to Postgres, built for Neon.** Every route that
+  touched the database was rewritten from synchronous SQLite calls to async Postgres queries.
+  This was tested against a real local Postgres instance rather than assumed correct — Neon's
+  cloud endpoint isn't reachable from this build environment's network, but the wire protocol
+  and SQL are identical, so local Postgres is a faithful stand-in for verifying correctness.
+- **Usage limit is now a genuine rolling 24-hour window**, not a calendar-day reset. This
+  required a real design change, not just a query tweak: a per-day aggregate counter can only
+  ever represent a fixed bucket like "today," so the schema moved to one row per conversion
+  (`usage_events`) and counts rows newer than `now() - interval '24 hours'`.
+- **That rolling-window check had to be re-proven safe under concurrency on Postgres
+  specifically.** The SQLite version relied on Node being single-threaded for its atomicity
+  guarantee; that guarantee doesn't carry over to Postgres, where a naive
+  "SELECT COUNT... THEN INSERT" is genuinely racy under the default READ COMMITTED isolation
+  level. Fixed using a Postgres advisory lock scoped to each individual guest/user, verified
+  with a live concurrency test: 40 simultaneous requests against a limit of 20 resolve to
+  exactly 20 successes, both via a manual load test and as a permanent regression test in the
+  automated suite.
+- **Added dedicated rate limiting** on the usage and account routers, separate from the global
+  server-wide limiter — the daily conversion cap doesn't stop someone from hammering
+  `/check-and-increment` or the dashboard endpoints far faster than any real usage pattern
+  would, burning server resources long before ever hitting the daily limit.
+- **Added a second password-recovery path: email.** Alongside the existing recovery-keyphrase
+  flow, `request-reset` sends a 10-minute link to the account's email (real SMTP when
+  configured, logged locally otherwise) that lands on the new `reset.html` page. Both recovery
+  paths redeem the exact same short-lived, single-purpose JWT via `reset-password` — the
+  keyphrase and the email link are just two different ways of proving you own the account, not
+  two different reset mechanisms. The response is intentionally identical whether or not the
+  email has an account, to avoid leaking which addresses are registered.
+- **Built an automated test suite** (`node --test`) — 27 tests covering signup/password/age
+  validation, terms-of-service enforcement (including the "missing vs explicitly false"
+  distinction), the recovery whitespace-normalization fix as a permanent regression test, name/
+  password reuse protection, deleted-account session invalidation as a permanent regression
+  test, both recovery paths end-to-end, and the concurrency test described above. Two real bugs
+  were caught and fixed *while writing these tests*, not before: Node's `fetch` hides
+  `Set-Cookie` behind `getSetCookie()` rather than `.get()` (a test-code bug, not an app bug,
+  but one that silently made every "authenticated" test request unauthenticated until fixed),
+  and the auth rate limiter's production-appropriate 20-requests/15-min limit was too tight for
+  the full test suite's legitimate request volume — fixed by making it configurable via env
+  rather than either weakening it in production or leaving the suite flaky.
+- **Added creative/polish features to Images → Video**: crossfade transitions between images
+  (rendered as live alpha-blended frames, not a fixed cut), optional background music mixed
+  into the exported WebM's audio track via the source `<audio>` element's `captureStream()`,
+  and an optional text watermark (also available on both GIF-output modes) with a
+  corner-position picker.
